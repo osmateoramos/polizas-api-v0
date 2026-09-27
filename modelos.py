@@ -1,6 +1,5 @@
 """Tablas del servicio."""
 from datetime import date, datetime
-from typing import Optional
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -13,11 +12,14 @@ class Poliza(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     numero: Mapped[str] = mapped_column(String(20), unique=True)
-    asegurado: Mapped[Optional[str]] = mapped_column(String(80))
-    tipo: Mapped[Optional[str]] = mapped_column(String(10))
+    # Obligatorios también en la base, no solo en la API: si un error vuelve a
+    # dejar pasar un None (como el validador sin return del semilla), la base lo
+    # rechaza en lugar de guardarlo en silencio.
+    asegurado: Mapped[str] = mapped_column(String(80))
+    tipo: Mapped[str] = mapped_column(String(10))
     prima: Mapped[float] = mapped_column(Float)
     fecha_inicio: Mapped[date] = mapped_column(Date)
-    fecha_fin: Mapped[Optional[date]] = mapped_column(Date)
+    fecha_fin: Mapped[date] = mapped_column(Date)
     token_firma: Mapped[str] = mapped_column(String(64))
 
     # Los siniestros y las predicciones no existen sin su póliza: si la póliza se
