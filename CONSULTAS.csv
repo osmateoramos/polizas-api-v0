@@ -1,0 +1,9 @@
+endpoint,estrategia,n_polizas,consultas_sql,tiempo_ms
+/polizas,,10,,
+/polizas,,2000,,
+/polizas/{id},,10,,
+/polizas/{id},,2000,,
+/siniestros,,10,,
+/siniestros,,2000,,
+/resumen,,10,,
+/resumen,,2000,,
