@@ -12,11 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from config import Settings, get_settings
-from database import Base, engine, get_db
+from database import get_db
 from esquemas import PolizaActualizacion, PolizaEntrada, PuntuacionEntrada, SiniestroEntrada
 from modelos import Poliza, Prediccion, Siniestro
 
-Base.metadata.create_all(engine)
+# El esquema de la base lo crean las migraciones (`alembic upgrade head`), no el arranque.
 
 app = FastAPI(title="Pólizas API", version="0.1.0")
 
