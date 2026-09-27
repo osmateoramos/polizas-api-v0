@@ -1,0 +1,17 @@
+# Dependencias directas. requirements.txt es el lock generado a partir de este archivo:
+#   pip install -r requirements.in && pip freeze > requirements.txt
+#
+# numpy y scipy se quedan en la última versión que todavía soporta Python 3.11,
+# la versión de la imagen de Docker (python:3.11.9-slim-bookworm).
+# scikit-learn va fijado a la versión con la que se serializó modelo.pkl.
+fastapi
+uvicorn
+sqlalchemy
+alembic
+pydantic
+pydantic-settings
+scikit-learn==1.9.1
+numpy<2.5
+scipy<1.18
+pytest
+httpx

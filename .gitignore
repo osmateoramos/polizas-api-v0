@@ -1,1 +1,15 @@
+# Python
+__pycache__/
 *.pyc
+.pytest_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Configuración local con secretos: se versiona solo .env.example
+.env
+
+# Bases de datos: el esquema lo crean las migraciones (alembic upgrade head)
+*.db
