@@ -71,10 +71,7 @@ def crear_poliza(datos: PolizaEntrada, db: Session = Depends(get_db),
                     prima=datos.prima, fecha_inicio=datos.fecha_inicio, fecha_fin=datos.fecha_fin,
                     token_firma=firmar(datos.numero, settings.secreto_firma))
     for s in datos.siniestros:
-        poliza.siniestros.append(Siniestro(
-            fecha=date.fromisoformat(str(s.get("fecha", date.today()))),
-            monto=s.get("monto", 0), descripcion=s.get("descripcion", ""),
-            estado=s.get("estado", "abierto")))
+        poliza.siniestros.append(Siniestro(**s.model_dump()))
     db.add(poliza)
     db.commit()
     db.refresh(poliza)
