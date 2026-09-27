@@ -40,6 +40,10 @@ class Siniestro(Base):
 
     poliza: Mapped["Poliza"] = relationship(back_populates="siniestros")
 
+    @property
+    def numero_poliza(self) -> str:
+        return self.poliza.numero
+
 
 class Prediccion(Base):
     __tablename__ = "predicciones"
@@ -51,3 +55,8 @@ class Prediccion(Base):
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     poliza: Mapped["Poliza"] = relationship(back_populates="predicciones")
+
+    @property
+    def numero(self) -> str:
+        """Número de la póliza puntuada: /predicciones lo devuelve con cada predicción."""
+        return self.poliza.numero

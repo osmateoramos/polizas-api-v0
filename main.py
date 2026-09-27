@@ -1,52 +1,38 @@
 """
 polizas-api-v0 — Gestión de pólizas y siniestros.
 Aseguradora Santo Tomás · prototipo interno.
-"""
-import hashlib
-import pickle
-from datetime import date
-from functools import lru_cache
 
-from fastapi import Depends, FastAPI
+Este módulo es la capa HTTP: rutas, códigos de estado y esquemas de respuesta.
+La lectura y escritura en la base vive en crud.py; la puntuación, en riesgo.py.
+El esquema de la base lo crean las migraciones (`alembic upgrade head`), no el arranque.
+"""
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+import crud
+import riesgo
 from config import Settings, get_settings
 from database import get_db
-from esquemas import PolizaActualizacion, PolizaEntrada, PuntuacionEntrada, Salud, SiniestroEntrada
-from modelos import Poliza, Prediccion, Siniestro
+from esquemas import (Error, PolizaActualizacion, PolizaEntrada, PolizaSalida, PrediccionSalida,
+                      PuntuacionEntrada, PuntuacionSalida, ResumenPoliza, Salud, SiniestroDetalle,
+                      SiniestroEntrada)
+from modelos import Poliza
 
-# El esquema de la base lo crean las migraciones (`alembic upgrade head`), no el arranque.
+app = FastAPI(title="Pólizas API", version="0.2.0")
 
-app = FastAPI(title="Pólizas API", version="0.1.0")
-
-
-@lru_cache
-def get_modelo():
-    """El modelo se deserializa una sola vez, la primera vez que alguien puntúa."""
-    with open(get_settings().ruta_modelo, "rb") as fh:
-        return pickle.load(fh)
+NO_EXISTE = {404: {"model": Error, "description": "La póliza no existe"}}
 
 
-def firmar(numero: str, secreto: str) -> str:
-    return hashlib.sha256(f"{numero}:{secreto}".encode()).hexdigest()
-
-
-def _siniestro(s: Siniestro) -> dict:
-    return {"id": s.id, "poliza_id": s.poliza_id, "numero_poliza": s.poliza.numero,
-            "fecha": s.fecha, "monto": s.monto, "descripcion": s.descripcion, "estado": s.estado}
-
-
-def _poliza(p: Poliza) -> dict:
-    return {
-        "id": p.id, "numero": p.numero, "asegurado": p.asegurado, "tipo": p.tipo,
-        "prima": p.prima, "fecha_inicio": p.fecha_inicio, "fecha_fin": p.fecha_fin,
-        "token_firma": p.token_firma,
-        "siniestros": [{"id": s.id, "fecha": s.fecha, "monto": s.monto,
-                        "descripcion": s.descripcion, "estado": s.estado} for s in p.siniestros],
-    }
+def poliza_o_404(id_poliza: int, db: Session = Depends(get_db)) -> Poliza:
+    """Dependencia de las rutas /polizas/{id_poliza}: entrega la póliza o corta con 404.
+    Comparte la sesión con la ruta: FastAPI resuelve `get_db` una vez por petición."""
+    poliza = crud.obtener_poliza(db, id_poliza)
+    if poliza is None:
+        raise HTTPException(status_code=404, detail=f"no existe la póliza {id_poliza}")
+    return poliza
 
 
 @app.get("/health", response_model=Salud, responses={503: {"model": Salud}})
@@ -64,89 +50,68 @@ def health(db: Session = Depends(get_db)):
     return {"estado": "ok", "base_de_datos": "ok"}
 
 
-@app.post("/polizas")
+@app.post("/polizas", status_code=201, response_model=PolizaSalida,
+          responses={409: {"model": Error, "description": "El número de póliza ya existe"}})
 def crear_poliza(datos: PolizaEntrada, db: Session = Depends(get_db),
                  settings: Settings = Depends(get_settings)):
-    poliza = Poliza(numero=datos.numero, asegurado=datos.asegurado, tipo=datos.tipo,
-                    prima=datos.prima, fecha_inicio=datos.fecha_inicio, fecha_fin=datos.fecha_fin,
-                    token_firma=firmar(datos.numero, settings.secreto_firma))
-    for s in datos.siniestros:
-        poliza.siniestros.append(Siniestro(**s.model_dump()))
-    db.add(poliza)
-    db.commit()
-    db.refresh(poliza)
+    try:
+        return crud.crear_poliza(db, datos, settings.secreto_firma)
+    except crud.NumeroDuplicado:
+        raise HTTPException(status_code=409,
+                            detail=f"ya existe una póliza con el número {datos.numero}") from None
+
+
+@app.get("/polizas", response_model=list[PolizaSalida])
+def listar_polizas(db: Session = Depends(get_db)):
+    return crud.listar_polizas(db)
+
+
+@app.get("/polizas/{id_poliza}", response_model=PolizaSalida, responses=NO_EXISTE)
+def obtener_poliza(poliza: Poliza = Depends(poliza_o_404)):
     return poliza
 
 
-@app.get("/polizas")
-def listar_polizas(db: Session = Depends(get_db)):
-    return [_poliza(p) for p in db.scalars(select(Poliza).order_by(Poliza.id))]
+@app.put("/polizas/{id_poliza}", response_model=PolizaSalida, responses=NO_EXISTE)
+def actualizar_poliza(datos: PolizaActualizacion, poliza: Poliza = Depends(poliza_o_404),
+                      db: Session = Depends(get_db)):
+    # exclude_unset: solo lo que el cliente envió. Sin esto, cada campo omitido
+    # llegaría como None y borraría el valor guardado.
+    cambios = datos.model_dump(exclude_unset=True)
+    if cambios.get("fecha_fin", poliza.fecha_fin) <= poliza.fecha_inicio:
+        raise HTTPException(status_code=422, detail="fecha_fin debe ser posterior a fecha_inicio")
+    return crud.actualizar_poliza(db, poliza, cambios)
 
 
-@app.get("/polizas/{id_poliza}")
-def obtener_poliza(id_poliza: int, db: Session = Depends(get_db)):
-    poliza = db.get(Poliza, id_poliza)
-    if poliza is None:
-        return {"error": f"no existe la póliza {id_poliza}"}
-    return _poliza(poliza)
+@app.post("/polizas/{id_poliza}/siniestros", status_code=201, response_model=SiniestroDetalle,
+          responses=NO_EXISTE)
+def declarar_siniestro(datos: SiniestroEntrada, poliza: Poliza = Depends(poliza_o_404),
+                       db: Session = Depends(get_db)):
+    return crud.declarar_siniestro(db, poliza, datos)
 
 
-@app.put("/polizas/{id_poliza}")
-def actualizar_poliza(id_poliza: int, datos: PolizaActualizacion, db: Session = Depends(get_db)):
-    poliza = db.get(Poliza, id_poliza)
-    if poliza is None:
-        return {"error": f"no existe la póliza {id_poliza}"}
-    for campo, valor in datos.model_dump().items():
-        setattr(poliza, campo, valor)
-    db.commit()
-    db.refresh(poliza)
-    return _poliza(poliza)
-
-
-@app.post("/polizas/{id_poliza}/siniestros")
-def declarar_siniestro(id_poliza: int, datos: SiniestroEntrada, db: Session = Depends(get_db)):
-    siniestro = Siniestro(poliza_id=id_poliza, fecha=datos.fecha, monto=datos.monto,
-                          descripcion=datos.descripcion, estado=datos.estado)
-    db.add(siniestro)
-    db.commit()
-    db.refresh(siniestro)
-    return {"id": siniestro.id, "poliza_id": siniestro.poliza_id, "fecha": siniestro.fecha,
-            "monto": siniestro.monto, "descripcion": siniestro.descripcion, "estado": siniestro.estado}
-
-
-@app.get("/siniestros")
+@app.get("/siniestros", response_model=list[SiniestroDetalle])
 def listar_siniestros(db: Session = Depends(get_db)):
-    return [_siniestro(s) for s in db.scalars(select(Siniestro).order_by(Siniestro.id))]
+    return crud.listar_siniestros(db)
 
 
-@app.get("/resumen")
+@app.get("/resumen", response_model=list[ResumenPoliza])
 def resumen(db: Session = Depends(get_db)):
-    filas = []
-    for p in db.scalars(select(Poliza).order_by(Poliza.id)):
-        filas.append({"numero": p.numero, "n_siniestros": len(p.siniestros),
-                      "monto_total": round(sum(s.monto for s in p.siniestros), 2)})
-    return filas
+    return crud.resumen(db)
 
 
-@app.post("/score")
+@app.post("/score", response_model=PuntuacionSalida, responses=NO_EXISTE)
 def puntuar(datos: PuntuacionEntrada, db: Session = Depends(get_db),
-            settings: Settings = Depends(get_settings), modelo=Depends(get_modelo)):
-    poliza = db.scalar(select(Poliza).where(Poliza.numero == datos.numero))
+            settings: Settings = Depends(get_settings), modelo=Depends(riesgo.get_modelo)):
+    poliza = crud.obtener_poliza_por_numero(db, datos.numero)
     if poliza is None:
-        return {"error": f"no existe la póliza {datos.numero}"}
-    rasgos = [[poliza.prima, len(poliza.siniestros), sum(s.monto for s in poliza.siniestros),
-               (date.today() - poliza.fecha_inicio).days]]
-    puntaje = float(modelo.predict_proba(rasgos)[0][1])
-    prediccion = Prediccion(poliza_id=poliza.id, puntaje=puntaje,
-                            alto_riesgo=puntaje > settings.umbral_alto_riesgo)
-    db.add(prediccion)
-    db.commit()
+        raise HTTPException(status_code=404, detail=f"no existe la póliza {datos.numero}")
+    puntaje = riesgo.puntuar(modelo, poliza)
+    prediccion = crud.registrar_prediccion(db, poliza, puntaje,
+                                           alto_riesgo=puntaje > settings.umbral_alto_riesgo)
     return {"numero": poliza.numero, "puntaje": round(puntaje, 4),
             "alto_riesgo": prediccion.alto_riesgo}
 
 
-@app.get("/predicciones")
+@app.get("/predicciones", response_model=list[PrediccionSalida])
 def listar_predicciones(db: Session = Depends(get_db)):
-    return [{"id": pr.id, "poliza_id": pr.poliza_id, "puntaje": pr.puntaje,
-             "alto_riesgo": pr.alto_riesgo, "creado_en": pr.creado_en}
-            for pr in db.scalars(select(Prediccion).order_by(Prediccion.id))]
+    return crud.listar_predicciones(db)

@@ -25,7 +25,7 @@ POLIZA = {
 
 def test_crear_poliza():
     r = cliente.post("/polizas", json=POLIZA)
-    assert r.status_code == 200
+    assert r.status_code == 201
     assert r.json()["numero"] == POLIZA["numero"]
 
 

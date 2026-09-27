@@ -1,8 +1,11 @@
-"""Esquemas de entrada."""
-from datetime import date
+"""Esquemas de entrada (lo que el cliente puede enviar) y de salida (lo que el
+servicio devuelve). Las salidas se construyen desde los objetos ORM con
+`from_attributes=True` y fijan qué campos se exponen: `token_firma` no está en
+ninguna, así que no sale del servicio."""
+from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 TipoPoliza = Literal["auto", "hogar", "vida"]
 EstadoSiniestro = Literal["abierto", "pagado", "rechazado"]
@@ -73,7 +76,67 @@ class PuntuacionEntrada(BaseModel):
     numero: str = Field(min_length=8, max_length=20)
 
 
+# --- Salida -------------------------------------------------------------------
+
+class SiniestroSalida(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    fecha: date
+    monto: float
+    descripcion: str
+    estado: str
+
+
+class SiniestroDetalle(SiniestroSalida):
+    """Un siniestro fuera de su póliza: lleva a qué póliza pertenece."""
+
+    poliza_id: int
+    numero_poliza: str
+
+
+class PolizaSalida(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    numero: str
+    asegurado: str
+    tipo: str
+    prima: float
+    fecha_inicio: date
+    fecha_fin: date
+    siniestros: list[SiniestroSalida]
+
+
+class ResumenPoliza(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    numero: str
+    n_siniestros: int
+    monto_total: float
+
+
+class PuntuacionSalida(BaseModel):
+    numero: str
+    puntaje: float = Field(ge=0, le=1)
+    alto_riesgo: bool
+
+
+class PrediccionSalida(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    poliza_id: int
+    numero: str
+    puntaje: float
+    alto_riesgo: bool
+    creado_en: datetime
+
+
 class Salud(BaseModel):
     estado: str = Field(description="ok o degradado")
     base_de_datos: str = Field(description="ok o sin respuesta")
 
+
+class Error(BaseModel):
+    detail: str
