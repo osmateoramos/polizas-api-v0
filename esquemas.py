@@ -37,3 +37,8 @@ class PolizaActualizacion(BaseModel):
 
 class PuntuacionEntrada(BaseModel):
     numero: str = Field(min_length=8, max_length=20)
+
+
+class Salud(BaseModel):
+    estado: str = Field(description="ok o degradado")
+    base_de_datos: str = Field(description="ok o sin respuesta")

@@ -8,12 +8,14 @@ from datetime import date
 from functools import lru_cache
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from config import Settings, get_settings
 from database import get_db
-from esquemas import PolizaActualizacion, PolizaEntrada, PuntuacionEntrada, SiniestroEntrada
+from esquemas import PolizaActualizacion, PolizaEntrada, PuntuacionEntrada, Salud, SiniestroEntrada
 from modelos import Poliza, Prediccion, Siniestro
 
 # El esquema de la base lo crean las migraciones (`alembic upgrade head`), no el arranque.
@@ -45,6 +47,21 @@ def _poliza(p: Poliza) -> dict:
         "siniestros": [{"id": s.id, "fecha": s.fecha, "monto": s.monto,
                         "descripcion": s.descripcion, "estado": s.estado} for s in p.siniestros],
     }
+
+
+@app.get("/health", response_model=Salud, responses={503: {"model": Salud}})
+def health(db: Session = Depends(get_db)):
+    """200 si la base responde y tiene el esquema aplicado; 503 si no.
+
+    Se consulta una tabla del servicio y no un simple `SELECT 1`: una base a la que
+    le faltan las migraciones «responde», pero el servicio no puede trabajar con ella.
+    """
+    try:
+        db.execute(select(Poliza.id).limit(1))
+    except SQLAlchemyError:
+        return JSONResponse(status_code=503,
+                            content={"estado": "degradado", "base_de_datos": "sin respuesta"})
+    return {"estado": "ok", "base_de_datos": "ok"}
 
 
 @app.post("/polizas")
