@@ -14,6 +14,7 @@
 | 2 | — | Mateo | Dar acceso a Vanessa y proponer cómo repartir el taller entre dos personas de forma secuencial (ramas o `main`, bitácora) |
 | 3 | A | Mateo | Hacer la Parte A: encontrar los defectos de `polizas-api-v0` y documentarlos en `HALLAZGOS.md` con evidencia reproducible sobre `v0-semilla` |
 | 4 | B | Mateo | Hacer el PR 2 (B1–B5 y B10): dependencias fijadas, `.env`, `BaseSettings`, sesión por petición, claves foráneas, Alembic y `/health` |
+| 5 | B | Mateo | Hacer el PR 3 (B6–B7): `response_model`, 201/404/409, PUT parcial y validadores, hasta que `test_contrato.py` pase 12/12 |
 
 ## Aceptado
 
