@@ -70,10 +70,23 @@ def actualizar_poliza(db: Session, poliza: Poliza, cambios: dict) -> Poliza:
 
 
 def resumen(db: Session) -> list[dict]:
-    """Por póliza: número de siniestros y monto total."""
-    return [{"numero": p.numero, "n_siniestros": len(p.siniestros),
-             "monto_total": round(sum(s.monto for s in p.siniestros), 2)}
-            for p in db.scalars(select(Poliza).order_by(Poliza.id))]
+    """Por póliza: número de siniestros y monto total.
+
+    estrategia: agregada. El conteo y la suma se calculan en la base con
+    `func.count`/`func.sum` y `group_by`, no cargando los siniestros a Python:
+    1 sola consulta sin importar cuántas pólizas o siniestros haya. El
+    `outerjoin` conserva las pólizas sin siniestros (con 0 y 0.0, no las excluye).
+    """
+    filas = db.execute(
+        select(Poliza.numero,
+               func.count(Siniestro.id).label("n_siniestros"),
+               func.coalesce(func.sum(Siniestro.monto), 0.0).label("monto_total"))
+        .outerjoin(Siniestro, Siniestro.poliza_id == Poliza.id)
+        .group_by(Poliza.id)
+        .order_by(Poliza.id)
+    ).all()
+    return [{"numero": f.numero, "n_siniestros": f.n_siniestros,
+             "monto_total": round(f.monto_total, 2)} for f in filas]
 
 
 # --- Siniestros ---------------------------------------------------------------
