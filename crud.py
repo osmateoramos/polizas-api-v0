@@ -87,7 +87,11 @@ def declarar_siniestro(db: Session, poliza: Poliza, datos: SiniestroEntrada) -> 
 
 
 def listar_siniestros(db: Session) -> list[Siniestro]:
-    return list(db.scalars(select(Siniestro).order_by(Siniestro.id)))
+    # estrategia: joinedload. Cada siniestro tiene exactamente una póliza (relación
+    # a-uno): el JOIN no duplica filas de siniestro, así que baja a 1 sola consulta
+    # sin el costo de fan-out que sí tiene joinedload sobre una relación a-muchos.
+    return list(db.scalars(
+        select(Siniestro).options(joinedload(Siniestro.poliza)).order_by(Siniestro.id)))
 
 
 # --- Predicciones -------------------------------------------------------------
