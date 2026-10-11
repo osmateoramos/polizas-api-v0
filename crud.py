@@ -5,9 +5,9 @@ escribe. Cada función recibe la sesión de la petición (la de `get_db`).
 """
 import hashlib
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from esquemas import PolizaEntrada, SiniestroEntrada
 from modelos import Poliza, Prediccion, Siniestro
@@ -40,10 +40,19 @@ def crear_poliza(db: Session, datos: PolizaEntrada, secreto_firma: str) -> Poliz
 
 
 def listar_polizas(db: Session) -> list[Poliza]:
-    return list(db.scalars(select(Poliza).order_by(Poliza.id)))
+    # estrategia: selectinload. Trae todas las pólizas y, en una segunda consulta,
+    # todos sus siniestros con un solo `WHERE poliza_id IN (...)`: 2 consultas sin
+    # importar cuántas pólizas haya. joinedload también baja a 1 consulta, pero
+    # con un JOIN que repite las columnas de la póliza por cada siniestro; con
+    # 2000 pólizas x 3 siniestros ese fan-out pesa más que la segunda consulta.
+    return list(db.scalars(
+        select(Poliza).options(selectinload(Poliza.siniestros)).order_by(Poliza.id)))
 
 
 def obtener_poliza(db: Session, id_poliza: int) -> Poliza | None:
+    # estrategia: lazy. Aquí N=1 (una sola póliza): la carga diferida de sus
+    # siniestros ya cuesta 1 sola consulta extra, así que selectinload mediría
+    # exactamente las mismas 2 consultas. No hay N+1 que resolver.
     return db.get(Poliza, id_poliza)
 
 
