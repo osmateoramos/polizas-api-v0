@@ -6,21 +6,41 @@ cada póliza con un modelo, guardando cada predicción.
 
 ## Instalación
 
+Requiere Python 3.11 o superior. Las versiones de todas las dependencias están
+fijadas en `requirements.txt` (las directas se declaran en `requirements.in`).
+
 ```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows (Git Bash): source .venv/Scripts/activate
 pip install -r requirements.txt
+cp .env.example .env             # y ajustar los secretos en .env
 ```
 
-El modelo entrenado (`modelo.pkl`) y la base de datos con datos de ejemplo
-(`app.db`) vienen en el repositorio: no hay que configurar nada.
+La configuración se lee de variables de entorno o de `.env` (ver `config.py`).
+`.env` no se versiona; `.env.example` lleva valores con los que el servicio arranca.
 
 ## Puesta en marcha
 
+La base de datos **no viene en el repositorio**: su esquema lo crean las
+migraciones de Alembic, sobre la base que indique `DATABASE_URL`.
+
 ```bash
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
+alembic upgrade head
+uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-El mismo comando sirve en el servidor de producción. `--reload` es cómodo
-porque recoge los cambios sin reiniciar a mano.
+`GET /health` responde 200 cuando la base responde y tiene el esquema aplicado.
+Para desarrollar puede añadirse `--reload`, que reinicia el servidor con cada
+cambio; en producción no se usa.
+
+Para cargar pólizas de ejemplo, con el servicio en marcha:
+
+```bash
+python sembrar_datos.py --polizas 12
+```
+
+Si traen un `app.db` de antes de las migraciones (creado por la versión
+anterior con `create_all`), bórrenlo y ejecuten `alembic upgrade head`.
 
 ### En contenedor
 
@@ -69,5 +89,6 @@ pytest tests/test_api.py
 
 ## Notas
 
-- Las claves están en `config.py` para que el equipo pueda probar sin configurar nada.
-- La base de datos se crea sola al arrancar si no existe.
+- Los secretos se configuran en `.env` (o como variables de entorno), nunca en el código.
+- Cambios en `modelos.py` → nueva migración: `alembic revision --autogenerate -m "..."`,
+  revisarla y aplicarla con `alembic upgrade head`.

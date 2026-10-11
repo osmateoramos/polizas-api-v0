@@ -1,0 +1,6 @@
+# Finales de línea LF en todas las máquinas (también en Windows con core.autocrlf=true):
+# verificar_entrega.py compara tests/test_contrato.py byte a byte con el del semilla,
+# y las evidencias de HALLAZGOS.md (grep sobre el código) no deben arrastrar \r.
+* text=auto eol=lf
+*.db binary
+*.pkl binary
