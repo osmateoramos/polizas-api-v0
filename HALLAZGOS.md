@@ -59,8 +59,55 @@
 
 ## `/polizas`
 
+Con el código original (`lazy`) daba 1+N consultas: 11 a 10 pólizas, 2001 a 2000 —
+la ruta pedía las pólizas y, al serializar cada una, disparaba una consulta
+aparte por sus siniestros. Con `selectinload(Poliza.siniestros)` esperaba un
+número fijo de 2 consultas sin importar N, pero a 2000 pólizas dio **5**, no 2.
+Revisé el código de SQLAlchemy (`orm/strategies.py:2999`) y la explicación es
+que `selectinload` agrupa los IDs de los padres en lotes de `chunksize=500` para
+no armar un `WHERE poliza_id IN (...)` arbitrariamente largo: con 2000 pólizas
+son `ceil(2000/500) = 4` lotes más la consulta inicial de pólizas, 5 en total.
+Sigue siendo un cambio enorme frente al N+1 (2001 → 5), pero no es estrictamente
+constante: crece a saltos de 500, no de 1 en 1. Probé además la alternativa
+`joinedload(Poliza.siniestros)`: baja a **1** sola consulta (sin el lotaje), pero
+tarda más —362.8 ms frente a 336.1 ms a 2000 pólizas— porque el JOIN repite las
+columnas de cada póliza una vez por cada siniestro (2000×3 = 6000 filas con datos
+de póliza duplicados) y SQLAlchemy obliga a llamar `.unique()` para deduplicar
+los padres antes de poder usar la colección. Menos consultas no es sinónimo de
+más rápido: me quedé con `selectinload`.
+
 ## `/polizas/{id}`
+
+Da 2 consultas tanto a 10 como a 2000 pólizas: una para `db.get(Poliza, id)` y
+otra, diferida, cuando se serializa `.siniestros`. No cambia con el tamaño de la
+tabla porque la ruta solo toca **una** póliza —el costo depende de cuántos
+siniestros tiene esa póliza (3, fijo en la siembra), no de cuántas pólizas haya
+en total. Probé forzar `selectinload` aquí también, y dio exactamente las mismas
+2 consultas en ambos tamaños: con N=1 no hay N+1 que arreglar, así que "cargar
+todo de una vez" no gana nada. Por eso lo dejé en `lazy`, sin tocar el código:
+es la estrategia más simple que mide igual que la alternativa "eager".
 
 ## `/siniestros`
 
+Pasó de 1+N consultas (11 a 10, 2001 a 2000: una por listar los siniestros y una
+por cada acceso diferido a `siniestro.poliza` dentro de `numero_poliza`) a **1
+sola consulta fija**, con `joinedload(Siniestro.poliza)`. A diferencia de
+`/polizas`, aquí el JOIN no tiene costo de fan-out: la relación de `Siniestro` a
+`Poliza` es a-uno, así que cada fila del JOIN corresponde a exactamente un
+siniestro —no hay filas duplicadas que deduplicar ni columnas repetidas de más.
+Por eso para esta relación `joinedload` es estrictamente mejor que
+`selectinload` (que aquí también bajaría a 2 consultas: todos los siniestros +
+un `SELECT ... WHERE id IN (...)` con los IDs de póliza distintos).
+
 ## `/resumen`
+
+Pasó de 1+N consultas (11 a 10, 2001 a 2000: una por listar las pólizas y una
+por cada `len(p.siniestros)`/`sum(...)` al recorrerlas en Python) a **1 sola
+consulta agregada**, calculando `COUNT`/`SUM` y `GROUP BY` directamente en la
+base de datos con un `outerjoin` entre `Poliza` y `Siniestro` (el `outerjoin`
+es necesario para que una póliza sin siniestros siga apareciendo con 0 y 0.0, en
+vez de desaparecer del resultado). No cambia entre 10 y 2000 porque el cálculo
+nunca trae las filas de siniestro a Python: lo único que viaja por la red es una
+fila resumen por póliza. De las cuatro, es la única donde ni `lazy` ni
+`selectinload`/`joinedload` tenían sentido: no se necesitan los siniestros
+completos, solo dos agregados por póliza.
