@@ -12,3 +12,4 @@
 |-----------------|----------------------|-----------------|
 | Oscar Mateo Ramos | oscar.ramos@usantotomas.edu.co | osmateoramos <osmateoramos@gmail.com>; osmateoramos <213377058+osmateoramos@users.noreply.github.com> |
 | Vanessa Acosta | vanessaacostar@usantotomas.edu.co | Vanessa Acosta <vanessa.acoro@gmail.com>; vaneacoro30 <206007439+vaneacoro30@users.noreply.github.com> |
+| Brayan David Barreto | brayanbarretop@usantotomas.edu.co | Bdbarretop <brayandavidbarreto@gmail.com> |
