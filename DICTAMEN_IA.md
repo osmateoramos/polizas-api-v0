@@ -1,6 +1,6 @@
 # Dictamen sobre `ia_tests_propuesta.py` — Parte D
 
-**Grupo:** <número> · **Integrantes:** Oscar Mateo Ramos, Vanessa Acosta
+**Grupo:** <número> · **Integrantes:** Oscar Mateo Ramos, Vanessa Acosta, Brayan David Barreto
 
 > Tres defectos. Las cuatro secciones de cada uno son obligatorias y se parsean.
 > El peso está en **«Cómo lo comprobamos»**, y la comprobación tiene una forma
@@ -23,58 +23,65 @@
   (una por cada póliza que crean los 6 tests). La batería no aísla nada: escribe
   en la base real.
 - **Por qué es un defecto** (módulo · sección): M10 · 5. TestClient de FastAPI
-- **Cómo lo comprobamos**: si el aislamiento fuera real, los tests nunca
-  tocarían `database.get_db`, así que romperlo no debería afectarlos. Hicimos
-  justo eso: mutamos `database.get_db` para que falle siempre. El resultado es
-  la prueba más directa posible: la batería **original se cae por completo**
-  (depende del `get_db` real, aunque diga que no), mientras que la **corregida
-  sigue sana** (está aislada de verdad, con el override sobre la llave correcta).
+- **Cómo lo comprobamos**: como la batería original corre sobre `app.db`, su
+  resultado depende de lo que esa base ya tenga, no del código que se entrega.
+  Para mostrarlo metimos un defecto que solo se ve en una base nueva: la
+  migración inicial crea la tabla de predicciones con otro nombre. Sobre el
+  `app.db` de desarrollo, migrado antes de la mutación, la tabla `predicciones`
+  sigue ahí y la batería **original sigue en verde**. La **corregida** migra
+  una base limpia, como lo hará el calificador, y **se pone en rojo**: `/score`
+  no puede registrar la predicción y responde 500. Después se revirtió con
+  `git checkout -- alembic/`.
 
 ```diff
---- a/database.py
-+++ b/database.py
-@@ -34,10 +34,6 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+--- a/alembic/versions/dece2037edb8_esquema_inicial_polizas_siniestros_y_.py
++++ b/alembic/versions/dece2037edb8_esquema_inicial_polizas_siniestros_y_.py
+@@ -33,7 +33,7 @@ def upgrade() -> None:
+     sa.PrimaryKeyConstraint('id'),
+     sa.UniqueConstraint('numero')
+     )
+-    op.create_table('predicciones',
++    op.create_table('predicciones_mutada',
+     sa.Column('id', sa.Integer(), nullable=False),
+     sa.Column('poliza_id', sa.Integer(), nullable=False),
+     sa.Column('puntaje', sa.Float(), nullable=False),
+@@ -42,7 +42,7 @@ def upgrade() -> None:
+     sa.ForeignKeyConstraint(['poliza_id'], ['polizas.id'], ondelete='CASCADE'),
+     sa.PrimaryKeyConstraint('id')
+     )
+-    with op.batch_alter_table('predicciones', schema=None) as batch_op:
++    with op.batch_alter_table('predicciones_mutada', schema=None) as batch_op:
+         batch_op.create_index(batch_op.f('ix_predicciones_poliza_id'), ['poliza_id'], unique=False)
  
- 
- def get_db() -> Iterator[Session]:
--    """Una sesión por petición: se abre al entrar y se cierra al terminar, pase lo
--    que pase. Un error en una petición ya no deja la sesión rota para las demás."""
--    db = SessionLocal()
--    try:
--        yield db
--    finally:
--        db.close()
-+    # MUTACIÓN DICTAMEN_IA defecto 1: la base real queda inaccesible.
-+    raise RuntimeError("base real inaccesible (mutacion de prueba)")
-+    yield  # pragma: no cover
+     op.create_table('siniestros',
 ```
 
 ```
 $ pytest ia_tests_propuesta.py -v
-ia_tests_propuesta.py::test_crear_poliza_responde FAILED
-ia_tests_propuesta.py::test_primas_variadas_son_aceptadas FAILED
-ia_tests_propuesta.py::test_consultar_poliza_inexistente FAILED
-ia_tests_propuesta.py::test_listar_polizas_no_falla FAILED
-ia_tests_propuesta.py::test_resumen_devuelve_lista FAILED
-ia_tests_propuesta.py::test_score_de_poliza_recien_creada FAILED
-...
-E       RuntimeError: base real inaccesible (mutacion de prueba)
-database.py:38: RuntimeError
-======================== 6 failed, 1 warning in 11.82s ========================
+ia_tests_propuesta.py::test_crear_poliza_responde PASSED                 [ 16%]
+ia_tests_propuesta.py::test_primas_variadas_son_aceptadas PASSED         [ 33%]
+ia_tests_propuesta.py::test_consultar_poliza_inexistente PASSED          [ 50%]
+ia_tests_propuesta.py::test_listar_polizas_no_falla PASSED               [ 66%]
+ia_tests_propuesta.py::test_resumen_devuelve_lista PASSED                [ 83%]
+ia_tests_propuesta.py::test_score_de_poliza_recien_creada PASSED         [100%]
+======================== 6 passed, 1 warning in 9.44s =========================
 ```
 
 ```
 $ pytest tests/test_ia_corregido.py -v
-tests/test_ia_corregido.py::test_crear_poliza_devuelve_201 PASSED
-tests/test_ia_corregido.py::test_primas_variadas_son_realmente_aceptadas PASSED
-tests/test_ia_corregido.py::test_prima_no_positiva_da_422 PASSED
-tests/test_ia_corregido.py::test_poliza_inexistente_da_404 PASSED
-tests/test_ia_corregido.py::test_listar_polizas_responde_200 PASSED
-tests/test_ia_corregido.py::test_resumen_devuelve_lista PASSED
-tests/test_ia_corregido.py::test_score_de_poliza_recien_creada PASSED
-tests/test_ia_corregido.py::test_numero_duplicado_da_409_y_el_servicio_sigue_vivo PASSED
-======================== 8 passed, 1 warning in 12.41s ========================
+...
+tests/test_ia_corregido.py::test_score_de_poliza_recien_creada FAILED    [ 92%]
+...
+>       assert r.status_code == 200
+E       assert 500 == 200
+E        +  where 500 = <Response [500 Internal Server Error]>.status_code
+================== 1 failed, 13 passed, 1 warning in 26.80s ===================
 ```
+
+  Comprobación complementaria: con `database.get_db` mutado para que lance
+  `RuntimeError`, la original se cae entera (6 failed) y la corregida sigue en
+  verde. Eso confirma que la original usa la sesión real aunque diga que la
+  sustituye.
 
 - **Corrección**: `tests/test_ia_corregido.py` sigue el mismo patrón que
   `tests/test_contrato.py`: pone `DATABASE_URL` en una base temporal **antes**
@@ -129,7 +136,7 @@ tests/test_ia_corregido.py::test_poliza_inexistente_da_404 FAILED
     def test_poliza_inexistente_da_404():
 >       assert cliente.get("/polizas/999999").status_code == 404
 E       AssertionError: assert 200 == 404
-=================== 1 failed, 7 passed, 1 warning in 12.01s ===================
+================== 1 failed, 13 passed, 1 warning in 28.58s ===================
 ```
 
 - **Corrección**: cada test corregido exige el único código correcto para su
@@ -139,6 +146,22 @@ E       AssertionError: assert 200 == 404
   en las cinco vueltas —si una sola prima válida fuera rechazada, el test lo nota—.
   Añadimos además `test_prima_no_positiva_da_422`, un caso negativo dedicado que
   el archivo de la IA no tenía.
+
+  Un código correcto en la respuesta tampoco basta si nadie comprueba lo que
+  quedó guardado. Por eso la batería corregida también lee de vuelta lo que
+  escribe: la póliza creada (`test_poliza_creada_se_lee_de_vuelta`), el
+  siniestro declarado (`test_siniestro_declarado_queda_guardado`), el cambio de
+  un PUT parcial (`test_put_parcial_queda_guardado`) y la predicción en
+  `/predicciones` tras `/score`. También exige los 422 de los validadores
+  (`test_fechas_invertidas_dan_422`,
+  `test_siniestro_con_monto_no_positivo_da_422`, `test_put_invalido_da_422`) y
+  el 404 en `PUT` y en `POST /polizas/{id}/siniestros`. Lo comprobamos con ocho
+  mutaciones más: quitar el commit de la predicción y pasar a `flush` el de
+  crear, el del PUT y el del siniestro; un `model_validator` de fechas que no
+  lanza; un `monto` sin `gt=0`; un PUT que acepta `null`; y `poliza_o_404` sin
+  404. La batería original de la IA sigue en verde (6 passed) con siete de ellas.
+  Solo detecta la de crear, porque su test de `/score` busca la póliza en otra
+  petición. La corregida pone al menos un test en rojo con las ocho.
 
 ## Defecto 3
 
@@ -196,7 +219,7 @@ tests/test_ia_corregido.py::test_numero_duplicado_da_409_y_el_servicio_sigue_viv
         r = cliente.post("/polizas", json=datos)
 >       assert r.status_code == 409, f"devolvió {r.status_code}"
 E       AssertionError: devolvió 201
-=================== 1 failed, 7 passed, 1 warning in 12.65s ===================
+================== 1 failed, 13 passed, 1 warning in 35.73s ===================
 ```
 
 - **Corrección**: `test_numero_duplicado_da_409_y_el_servicio_sigue_vivo` prueba
