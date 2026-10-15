@@ -49,6 +49,36 @@ docker build -t polizas-api .
 docker run -p 8000:8000 polizas-api
 ```
 
+y desde el host:
+
+```bash
+curl localhost:8000/health        # {"estado":"ok","base_de_datos":"ok"}
+```
+
+Al arrancar, el contenedor aplica `alembic upgrade head` y después levanta
+uvicorn en `0.0.0.0:8000`. No hace falta pasarle `.env`: `config.py` trae
+valores de desarrollo, y la imagen no lleva ni `.env` ni ninguna base (ver
+`.dockerignore`). Los secretos reales se pasan al correrlo, con
+`docker run --env-file .env ...` o `-e SECRETO_FIRMA=...`; la ruta de la base ya
+viene fijada en la imagen (`DATABASE_URL=sqlite:////app/datos/app.db`).
+
+El servicio corre como el usuario `app`, sin privilegios, y `HEALTHCHECK`
+consulta `/health`: `docker ps` muestra el contenedor como `healthy` cuando la
+base responde y tiene el esquema aplicado.
+
+**Dónde quedan los datos.** La base está en `/app/datos`, dentro del
+contenedor:
+
+- `docker restart` reinicia el **mismo** contenedor: los datos siguen ahí.
+- Borrar el contenedor (`docker rm`) y levantar otro desde la misma imagen
+  empieza con una base vacía: el contenedor nuevo no hereda la capa de escritura
+  del anterior, y las migraciones crean el esquema de cero.
+- Para que sobrevivan al contenedor, se monta un volumen con nombre:
+
+  ```bash
+  docker run -p 8000:8000 -v polizas-datos:/app/datos polizas-api
+  ```
+
 ## Endpoints
 
 | Método | Ruta | Qué hace |
@@ -62,6 +92,7 @@ docker run -p 8000:8000 polizas-api
 | GET | `/resumen` | Siniestros y monto total por póliza |
 | POST | `/score` | Puntúa el riesgo de una póliza y guarda la predicción |
 | GET | `/predicciones` | Histórico de predicciones |
+| GET | `/health` | 200 si la base responde y tiene el esquema; 503 si no |
 
 ### Ejemplo
 
@@ -79,8 +110,24 @@ curl -X POST localhost:8000/score -H "Content-Type: application/json" -d '{"nume
 ## Pruebas
 
 ```bash
-pytest tests/test_api.py
+pytest
 ```
+
+Corre toda la batería de `tests/`. Ningún test toca `app.db`: cada archivo crea
+su propia base SQLite, le aplica las migraciones y sustituye `database.get_db`
+con `app.dependency_overrides` por una sesión sobre esa base. Por eso `pytest`
+puede correrse dos veces seguidas con el mismo resultado.
+
+- `tests/test_contrato.py`: el contrato del taller. **No se modifica.**
+- `tests/test_api.py`: pruebas propias, sobre una base en una carpeta temporal
+  de pytest.
+- `tests/test_ia_corregido.py`: la batería de `ia_tests_propuesta.py` corregida
+  (Parte D, ver `DICTAMEN_IA.md`).
+
+`ia_tests_propuesta.py`, en la raíz, es la batería original de la IA y se deja
+tal cual como objeto de la auditoría. `pytest` no la recoge porque su nombre no
+empieza por `test_`. Si se corre a mano, escribe en `app.db`: ese es justo su
+defecto 1.
 
 ## Utilidades
 
