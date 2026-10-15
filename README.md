@@ -121,6 +121,13 @@ puede correrse dos veces seguidas con el mismo resultado.
 - `tests/test_contrato.py`: el contrato del taller. **No se modifica.**
 - `tests/test_api.py`: pruebas propias, sobre una base en una carpeta temporal
   de pytest.
+- `tests/test_ia_corregido.py`: la batería de `ia_tests_propuesta.py` corregida
+  (Parte D, ver `DICTAMEN_IA.md`).
+
+`ia_tests_propuesta.py`, en la raíz, es la batería original de la IA y se deja
+tal cual como objeto de la auditoría. `pytest` no la recoge porque su nombre no
+empieza por `test_`. Si se corre a mano, escribe en `app.db`: ese es justo su
+defecto 1.
 
 ## Utilidades
 
