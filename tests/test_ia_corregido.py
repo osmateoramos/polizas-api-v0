@@ -80,6 +80,8 @@ cliente = TestClient(app, raise_server_exceptions=False)
 
 random.seed(2026)
 
+SINIESTRO = {"fecha": "2026-03-02", "monto": 850_000, "descripcion": "Choque leve", "estado": "abierto"}
+
 
 def _numero() -> str:
     return f"POL-IAC-{uuid.uuid4().hex[:6].upper()}"
@@ -119,6 +121,53 @@ def test_prima_no_positiva_da_422():
 
 def test_poliza_inexistente_da_404():
     assert cliente.get("/polizas/999999").status_code == 404
+    assert cliente.put("/polizas/999999", json={"prima": 10}).status_code == 404
+    assert cliente.post("/polizas/999999/siniestros", json=SINIESTRO).status_code == 404
+
+
+def test_poliza_creada_se_lee_de_vuelta():
+    """Un 201 no basta: si el commit faltara, la póliza no estaría en la petición siguiente."""
+    datos = _poliza()
+    creada = cliente.post("/polizas", json=datos).json()
+    r = cliente.get(f"/polizas/{creada['id']}")
+    assert r.status_code == 200
+    assert r.json()["numero"] == datos["numero"]
+
+
+def test_fechas_invertidas_dan_422():
+    r = cliente.post("/polizas", json=_poliza(fecha_inicio="2026-12-31", fecha_fin="2026-01-01"))
+    assert r.status_code == 422, f"devolvió {r.status_code}"
+
+
+def test_siniestro_con_monto_no_positivo_da_422():
+    anidado = cliente.post("/polizas", json=_poliza(siniestros=[{**SINIESTRO, "monto": -50}]))
+    assert anidado.status_code == 422, f"anidado devolvió {anidado.status_code}"
+    creada = cliente.post("/polizas", json=_poliza()).json()
+    r = cliente.post(f"/polizas/{creada['id']}/siniestros", json={**SINIESTRO, "monto": 0})
+    assert r.status_code == 422, f"declarado devolvió {r.status_code}"
+
+
+def test_siniestro_declarado_queda_guardado():
+    creada = cliente.post("/polizas", json=_poliza()).json()
+    r = cliente.post(f"/polizas/{creada['id']}/siniestros", json=SINIESTRO)
+    assert r.status_code == 201, f"devolvió {r.status_code}"
+    guardada = cliente.get(f"/polizas/{creada['id']}").json()
+    assert [s["id"] for s in guardada["siniestros"]] == [r.json()["id"]]
+
+
+def test_put_parcial_queda_guardado():
+    creada = cliente.post("/polizas", json=_poliza(prima=1_000_000)).json()
+    r = cliente.put(f"/polizas/{creada['id']}", json={"prima": 999_000})
+    assert r.status_code == 200 and r.json()["prima"] == 999_000
+    guardada = cliente.get(f"/polizas/{creada['id']}").json()
+    assert guardada["prima"] == 999_000, "el cambio del PUT no quedó guardado"
+    assert guardada["asegurado"] == creada["asegurado"] and guardada["tipo"] == creada["tipo"]
+
+
+def test_put_invalido_da_422():
+    creada = cliente.post("/polizas", json=_poliza()).json()
+    assert cliente.put(f"/polizas/{creada['id']}", json={"asegurado": None}).status_code == 422
+    assert cliente.put(f"/polizas/{creada['id']}", json={"fecha_fin": "2025-06-30"}).status_code == 422
 
 
 def test_listar_polizas_responde_200():
@@ -140,6 +189,9 @@ def test_score_de_poliza_recien_creada():
     assert r.status_code == 200
     cuerpo = r.json()
     assert "puntaje" in cuerpo and 0.0 <= cuerpo["puntaje"] <= 1.0
+    # /score también registra la predicción: tiene que verse en el histórico.
+    assert any(p["numero"] == datos["numero"] for p in cliente.get("/predicciones").json()), \
+        "la predicción no quedó registrada"
 
 
 # Va el último a propósito, igual que en test_contrato.py: si el conflicto
