@@ -1,0 +1,29 @@
+# Lo que nunca debe entrar en la imagen
+
+# Secretos y configuración local (el contenedor arranca con los valores por
+# defecto de config.py; los secretos reales se pasan con --env-file o -e)
+.env
+.env.*
+
+# Bases de datos: el esquema lo crean las migraciones al arrancar el contenedor
+*.db
+**/*.db
+
+# Entornos virtuales y cachés de Python
+.venv/
+venv/
+env/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+
+# Historia y configuración de git
+.git/
+.gitignore
+.gitattributes
+
+# Lo que el servicio no necesita para correr
+tests/
+plantillas/
+Dockerfile
+.dockerignore
